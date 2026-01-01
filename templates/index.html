@@ -443,14 +443,27 @@
                     <div x-show="usePrivateServer" x-cloak class="bg-gray-700/50 rounded-lg p-4 space-y-3">
                         <h3 class="font-medium text-purple-300 mb-2">Private Server Configuration</h3>
                         
+                        <!-- Help Box -->
+                        <div class="bg-blue-900/30 border border-blue-700 rounded-lg p-3 text-sm">
+                            <p class="text-blue-300 font-medium mb-1">💡 Cara Input (seperti hosts/PowerTunner):</p>
+                            <p class="text-gray-300">Jika PS kamu menggunakan host mapping seperti:</p>
+                            <code class="block bg-black/30 rounded p-2 mt-1 text-xs text-green-400">5.39.46.36 growtopia1.com</code>
+                            <p class="text-gray-300 mt-2">Maka isi:</p>
+                            <ul class="text-gray-300 text-xs mt-1 space-y-1">
+                                <li>• <strong>Server IP:</strong> <span class="text-yellow-300">5.39.46.36</span> (IP address)</li>
+                                <li>• <strong>Server Data URL:</strong> <span class="text-yellow-300">www.growtopia1.com</span> (hostname)</li>
+                            </ul>
+                        </div>
+                        
                         <div>
-                            <label class="block text-sm font-medium mb-1">Server IP / Host</label>
+                            <label class="block text-sm font-medium mb-1">Server IP (untuk koneksi ENet)</label>
                             <input
                                 x-model="privateServer.serverIp"
                                 type="text"
                                 class="w-full bg-gray-700 border border-gray-600 rounded-lg px-4 py-2 focus:outline-none focus:border-purple-500"
-                                placeholder="192.168.1.100 or ps.example.com"
+                                placeholder="5.39.46.36"
                             >
+                            <p class="text-xs text-gray-400 mt-1">IP address dari Private Server</p>
                         </div>
                         
                         <div>
@@ -464,14 +477,14 @@
                         </div>
                         
                         <div>
-                            <label class="block text-sm font-medium mb-1">Server Data URL (Optional)</label>
+                            <label class="block text-sm font-medium mb-1">Server Data URL (untuk server_data.php)</label>
                             <input
                                 x-model="privateServer.serverDataUrl"
                                 type="text"
                                 class="w-full bg-gray-700 border border-gray-600 rounded-lg px-4 py-2 focus:outline-none focus:border-purple-500"
-                                placeholder="Leave empty to use Server IP"
+                                placeholder="www.growtopia1.com"
                             >
-                            <p class="text-xs text-gray-400 mt-1">URL for server_data.php endpoint</p>
+                            <p class="text-xs text-gray-400 mt-1">Hostname yang digunakan PS (kosongkan untuk pakai Server IP)</p>
                         </div>
 
                         <label class="flex items-center gap-2 cursor-pointer">
