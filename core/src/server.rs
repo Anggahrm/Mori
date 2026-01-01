@@ -133,7 +133,10 @@ pub fn get_private_server_data(
             
             Ok(server_data)
         }
-        Err(_) => {
+        Err(e) => {
+            // Log the error before falling back to default config
+            println!("[PS] Server data fetch failed ({}), using direct connection to {}:{}", 
+                     e, ps_config.server_ip, ps_config.server_port);
             // If server data endpoint fails, create a minimal ServerData with PS config
             Ok(ServerData {
                 server: ps_config.server_ip.clone(),
