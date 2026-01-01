@@ -1,4 +1,5 @@
 use crate::types::login_info::LoginInfo;
+use crate::types::server_config::PrivateServerConfig;
 use crate::types::server_data::ServerData;
 use anyhow::Result;
 use scraper::{Html, Selector};
@@ -90,6 +91,73 @@ pub fn get_server_data_with_proxy(
         .read_to_string()?;
 
     ServerData::parse_from_response(&body)
+}
+
+/// Get server data from a private server
+pub fn get_private_server_data(
+    ps_config: &PrivateServerConfig,
+    login_info: &LoginInfo,
+    proxy: Option<&str>,
+) -> Result<ServerData> {
+    let url = ps_config.get_server_data_url();
+
+    let agent = if let Some(proxy_url) = proxy {
+        let proxy = ureq::Proxy::new(proxy_url)?;
+        ureq::Agent::new_with_config(Config::builder().proxy(Some(proxy)).build())
+    } else {
+        ureq::Agent::new_with_defaults()
+    };
+
+    let result = agent
+        .post(&url)
+        .header(
+            "User-Agent",
+            "UbiServices_SDK_2022.Release.9_PC64_ansi_static",
+        )
+        .header("Content-Type", "application/x-www-form-urlencoded")
+        .send(&format!(
+            "platform=0&protocol={}&version={}",
+            login_info.protocol, login_info.game_version
+        ));
+
+    match result {
+        Ok(mut response) => {
+            let body = response.body_mut().read_to_string()?;
+            let mut server_data = ServerData::parse_from_response(&body)?;
+            
+            // Override with private server config if skip_login_url is set
+            if ps_config.skip_login_url {
+                server_data.server = ps_config.server_ip.clone();
+                server_data.port = ps_config.server_port;
+            }
+            
+            Ok(server_data)
+        }
+        Err(_) => {
+            // If server data endpoint fails, create a minimal ServerData with PS config
+            Ok(ServerData {
+                server: ps_config.server_ip.clone(),
+                port: ps_config.server_port,
+                loginurl: ps_config.server_data_url.clone(),
+                server_type: 1,
+                beta_server: String::new(),
+                beta_loginurl: String::new(),
+                beta_port: 0,
+                beta_type: 0,
+                beta2_server: String::new(),
+                beta2_loginurl: String::new(),
+                beta2_port: 0,
+                beta2_type: 0,
+                beta3_server: String::new(),
+                beta3_loginurl: String::new(),
+                beta3_port: 0,
+                beta3_type: 0,
+                type2: 0,
+                maint: None,
+                meta: String::new(),
+            })
+        }
+    }
 }
 
 pub fn get_dashboard(login_url: &str, login_info: &LoginInfo) -> Result<DashboardLinks> {

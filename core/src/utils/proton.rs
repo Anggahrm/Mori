@@ -1,9 +1,5 @@
 use md5;
 use sha2::{Digest, Sha256};
-use std::{
-    fs::File,
-    io::{self, Read},
-};
 
 pub fn generate_klv(protocol: &str, version: &str, rid: &str) -> String {
     let salts = [

@@ -30,6 +30,13 @@
         loginMethod: 'legacy',
         credentials: { growid: '', password: '', token: '' },
         socks5: '',
+        usePrivateServer: false,
+        privateServer: {
+            serverIp: '',
+            serverPort: '17091',
+            serverDataUrl: '',
+            useHttps: false
+        },
 
         async loadBots() {
             const response = await fetch('/api/bots');
@@ -61,6 +68,16 @@
                 };
             }
 
+            // Add private server config if enabled
+            if (this.usePrivateServer && this.privateServer.serverIp) {
+                payload.private_server = {
+                    server_ip: this.privateServer.serverIp,
+                    server_port: parseInt(this.privateServer.serverPort) || 17091,
+                    server_data_url: this.privateServer.serverDataUrl || null,
+                    use_https: this.privateServer.useHttps
+                };
+            }
+
             const response = await fetch('/api/bots', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
@@ -72,13 +89,17 @@
                 this.showAddBot = false;
                 this.credentials = { growid: '', password: '', token: '' };
                 this.socks5 = '';
+                this.privateServer = { serverIp: '', serverPort: '17091', serverDataUrl: '', useHttps: false };
+                this.usePrivateServer = false;
                 this.loadBots();
+            } else {
+                alert(result.error || 'Failed to create bot');
             }
         },
 
         async removeBot(id) {
             if (confirm('Are you sure you want to remove this bot?')) {
-                await fetch(`/api/bots/${id}`, { method: 'DELETE' });
+                await fetch(\`/api/bots/\${id}\`, { method: 'DELETE' });
                 this.loadBots();
             }
         }
@@ -90,7 +111,10 @@
         <header class="bg-gray-800 border-b border-gray-700">
             <div class="container mx-auto px-4 py-4">
                 <div class="flex items-center justify-between">
-                    <h1 class="text-2xl font-bold text-blue-400">Mori</h1>
+                    <div class="flex items-center gap-3">
+                        <h1 class="text-2xl font-bold text-blue-400">Mori</h1>
+                        <span class="text-xs bg-green-600 px-2 py-1 rounded-full">PS Support</span>
+                    </div>
 
                     <div class="flex items-center gap-4">
                         <!-- Bot Selector -->
@@ -100,7 +124,7 @@
                         >
                             <option value="">No bot selected</option>
                             <template x-for="bot in bots" :key="bot.id">
-                                <option :value="bot.id" x-text="bot.name"></option>
+                                <option :value="bot.id" x-text="bot.name + (bot.is_private_server ? ' [PS]' : '')"></option>
                             </template>
                         </select>
 
@@ -133,8 +157,13 @@
                                     @click="selectedBotId = bot.id"
                                 >
                                     <div class="flex items-center justify-between mb-2">
-                                        <span class="font-medium" x-text="bot.name"></span>
-                                        <span class="text-xs px-2 py-1 rounded-full bg-green-600" x-text="bot.status"></span>
+                                        <div class="flex items-center gap-2">
+                                            <span class="font-medium" x-text="bot.name"></span>
+                                            <span x-show="bot.is_private_server" class="text-xs bg-purple-600 px-1.5 py-0.5 rounded">PS</span>
+                                        </div>
+                                        <span class="text-xs px-2 py-1 rounded-full" 
+                                              :class="bot.status === 'Connected' ? 'bg-green-600' : bot.status === 'Connecting' ? 'bg-yellow-600' : 'bg-gray-600'"
+                                              x-text="bot.status"></span>
                                     </div>
                                     <div class="text-sm text-gray-400 space-y-1">
                                         <div class="flex items-center gap-1">
@@ -166,7 +195,10 @@
                         <div class="space-y-4">
                             <!-- Bot Stats -->
                             <div class="bg-gray-800 rounded-lg p-6 border border-gray-700">
-                                <h2 class="text-2xl font-bold mb-4" x-text="selectedBot.name"></h2>
+                                <div class="flex items-center gap-3 mb-4">
+                                    <h2 class="text-2xl font-bold" x-text="selectedBot.name"></h2>
+                                    <span x-show="selectedBot.is_private_server" class="text-sm bg-purple-600 px-2 py-1 rounded">Private Server</span>
+                                </div>
 
                                 <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
                                     <div class="bg-gray-700 rounded-lg p-4">
@@ -189,19 +221,17 @@
                                 <h3 class="text-lg font-bold mb-4">Movement Controls</h3>
 
                                 <div class="flex flex-col items-center gap-2">
-                                    <!-- Up Button -->
                                     <button
-                                        @click="fetch(`/api/bots/${selectedBotId}/move`, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({direction: 'up', tiles: 1})})"
+                                        @click="fetch(\`/api/bots/\${selectedBotId}/move\`, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({direction: 'up', tiles: 1})})"
                                         class="bg-blue-600 hover:bg-blue-700 w-16 h-16 rounded-lg transition flex items-center justify-center"
                                         title="Move Up"
                                     >
                                         <i data-lucide="arrow-up" class="w-6 h-6"></i>
                                     </button>
 
-                                    <!-- Left, Center, Right -->
                                     <div class="flex gap-2">
                                         <button
-                                            @click="fetch(`/api/bots/${selectedBotId}/move`, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({direction: 'left', tiles: 1})})"
+                                            @click="fetch(\`/api/bots/\${selectedBotId}/move\`, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({direction: 'left', tiles: 1})})"
                                             class="bg-blue-600 hover:bg-blue-700 w-16 h-16 rounded-lg transition flex items-center justify-center"
                                             title="Move Left"
                                         >
@@ -211,7 +241,7 @@
                                             <i data-lucide="move" class="w-6 h-6 text-gray-500"></i>
                                         </div>
                                         <button
-                                            @click="fetch(`/api/bots/${selectedBotId}/move`, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({direction: 'right', tiles: 1})})"
+                                            @click="fetch(\`/api/bots/\${selectedBotId}/move\`, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({direction: 'right', tiles: 1})})"
                                             class="bg-blue-600 hover:bg-blue-700 w-16 h-16 rounded-lg transition flex items-center justify-center"
                                             title="Move Right"
                                         >
@@ -219,18 +249,13 @@
                                         </button>
                                     </div>
 
-                                    <!-- Down Button -->
                                     <button
-                                        @click="fetch(`/api/bots/${selectedBotId}/move`, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({direction: 'down', tiles: 1})})"
+                                        @click="fetch(\`/api/bots/\${selectedBotId}/move\`, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({direction: 'down', tiles: 1})})"
                                         class="bg-blue-600 hover:bg-blue-700 w-16 h-16 rounded-lg transition flex items-center justify-center"
                                         title="Move Down"
                                     >
                                         <i data-lucide="arrow-down" class="w-6 h-6"></i>
                                     </button>
-                                </div>
-
-                                <div class="mt-4 text-center text-sm text-gray-400">
-                                    Use arrow buttons to move the bot
                                 </div>
                             </div>
 
@@ -240,35 +265,35 @@
 
                                 <div class="grid grid-cols-2 md:grid-cols-3 gap-3">
                                     <button
-                                        @click="fetch(`/api/bots/${selectedBotId}/connect`, {method: 'POST'})"
+                                        @click="fetch(\`/api/bots/\${selectedBotId}/connect\`, {method: 'POST'})"
                                         class="bg-green-600 hover:bg-green-700 px-4 py-2 rounded-lg transition flex items-center justify-center gap-2"
                                     >
                                         <i data-lucide="plug" class="w-4 h-4"></i>
                                         Connect
                                     </button>
                                     <button
-                                        @click="fetch(`/api/bots/${selectedBotId}/disconnect`, {method: 'POST'})"
+                                        @click="fetch(\`/api/bots/\${selectedBotId}/disconnect\`, {method: 'POST'})"
                                         class="bg-red-600 hover:bg-red-700 px-4 py-2 rounded-lg transition flex items-center justify-center gap-2"
                                     >
                                         <i data-lucide="plug-zap" class="w-4 h-4"></i>
                                         Disconnect
                                     </button>
                                     <button
-                                        @click="fetch(`/api/bots/${selectedBotId}/collect`, {method: 'POST'})"
+                                        @click="fetch(\`/api/bots/\${selectedBotId}/collect\`, {method: 'POST'})"
                                         class="bg-blue-600 hover:bg-blue-700 px-4 py-2 rounded-lg transition flex items-center justify-center gap-2"
                                     >
                                         <i data-lucide="package" class="w-4 h-4"></i>
                                         Collect
                                     </button>
                                     <button
-                                        @click="const world = prompt('Enter world name:'); if(world) fetch(`/api/bots/${selectedBotId}/warp`, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({world_name: world})})"
+                                        @click="const world = prompt('Enter world name:'); if(world) fetch(\`/api/bots/\${selectedBotId}/warp\`, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({world_name: world})})"
                                         class="bg-purple-600 hover:bg-purple-700 px-4 py-2 rounded-lg transition flex items-center justify-center gap-2"
                                     >
                                         <i data-lucide="globe" class="w-4 h-4"></i>
                                         Warp
                                     </button>
                                     <button
-                                        @click="const msg = prompt('Enter message:'); if(msg) fetch(`/api/bots/${selectedBotId}/say`, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({message: msg})})"
+                                        @click="const msg = prompt('Enter message:'); if(msg) fetch(\`/api/bots/\${selectedBotId}/say\`, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({message: msg})})"
                                         class="bg-indigo-600 hover:bg-indigo-700 px-4 py-2 rounded-lg transition flex items-center justify-center gap-2"
                                     >
                                         <i data-lucide="message-circle" class="w-4 h-4"></i>
@@ -284,11 +309,11 @@
                                 </div>
                             </div>
 
-                            <!-- Inventory & World Info Tabs -->
+                            <!-- Tabs -->
                             <div class="bg-gray-800 rounded-lg border border-gray-700" x-data="{ tab: 'inventory', inventoryData: null, worldData: null }">
                                 <div class="flex border-b border-gray-700">
                                     <button
-                                        @click="tab = 'inventory'; if(!inventoryData) fetch(`/api/bots/${selectedBotId}/inventory`).then(r => r.json()).then(d => inventoryData = d.data)"
+                                        @click="tab = 'inventory'; if(!inventoryData) fetch(\`/api/bots/\${selectedBotId}/inventory\`).then(r => r.json()).then(d => inventoryData = d.data)"
                                         class="px-6 py-3 font-medium transition flex items-center gap-2"
                                         :class="tab === 'inventory' ? 'bg-gray-700 text-blue-400 border-b-2 border-blue-400' : 'text-gray-400 hover:text-gray-200'"
                                     >
@@ -296,7 +321,7 @@
                                         Inventory
                                     </button>
                                     <button
-                                        @click="tab = 'world'; if(!worldData) fetch(`/api/bots/${selectedBotId}/world`).then(r => r.json()).then(d => worldData = d.data)"
+                                        @click="tab = 'world'; if(!worldData) fetch(\`/api/bots/\${selectedBotId}/world\`).then(r => r.json()).then(d => worldData = d.data)"
                                         class="px-6 py-3 font-medium transition flex items-center gap-2"
                                         :class="tab === 'world' ? 'bg-gray-700 text-blue-400 border-b-2 border-blue-400' : 'text-gray-400 hover:text-gray-200'"
                                     >
@@ -314,7 +339,6 @@
                                 </div>
 
                                 <div class="p-6">
-                                    <!-- Inventory Tab -->
                                     <div x-show="tab === 'inventory'" x-cloak>
                                         <template x-if="inventoryData">
                                             <div>
@@ -341,12 +365,9 @@
                                                 </div>
                                             </div>
                                         </template>
-                                        <div x-show="!inventoryData" class="text-center text-gray-500 py-8">
-                                            Loading inventory...
-                                        </div>
+                                        <div x-show="!inventoryData" class="text-center text-gray-500 py-8">Loading inventory...</div>
                                     </div>
 
-                                    <!-- World Tab -->
                                     <div x-show="tab === 'world'" x-cloak>
                                         <template x-if="worldData">
                                             <div>
@@ -355,7 +376,6 @@
                                                     <div>Size: <span x-text="worldData.width"></span> x <span x-text="worldData.height"></span></div>
                                                     <div>Players: <span x-text="worldData.players.length"></span></div>
                                                 </div>
-
                                                 <h4 class="font-bold mb-2">Players</h4>
                                                 <div class="space-y-2 max-h-64 overflow-auto">
                                                     <template x-for="player in worldData.players" :key="player.net_id">
@@ -370,15 +390,12 @@
                                                 </div>
                                             </div>
                                         </template>
-                                        <div x-show="!worldData" class="text-center text-gray-500 py-8">
-                                            Loading world data...
-                                        </div>
+                                        <div x-show="!worldData" class="text-center text-gray-500 py-8">Loading world data...</div>
                                     </div>
 
-                                    <!-- Logs Tab -->
                                     <div x-show="tab === 'logs'" x-cloak
                                          x-data="{ logs: [] }"
-                                         x-init="fetch(`/api/bots/${selectedBotId}/logs`).then(r => r.json()).then(d => logs = d.data.logs)">
+                                         x-init="fetch(\`/api/bots/\${selectedBotId}/logs\`).then(r => r.json()).then(d => logs = d.data.logs)">
                                         <div class="bg-black rounded p-4 h-96 overflow-auto font-mono text-sm">
                                             <template x-for="log in logs" :key="log">
                                                 <div class="text-green-400" x-text="log"></div>
@@ -403,10 +420,70 @@
              x-cloak
              class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50"
              @click.self="showAddBot = false">
-            <div class="bg-gray-800 rounded-lg p-6 max-w-md w-full mx-4 border border-gray-700">
+            <div class="bg-gray-800 rounded-lg p-6 max-w-lg w-full mx-4 border border-gray-700 max-h-[90vh] overflow-y-auto">
                 <h2 class="text-2xl font-bold mb-4">Add New Bot</h2>
 
                 <div class="space-y-4">
+                    <!-- Private Server Toggle -->
+                    <div class="bg-purple-900/30 border border-purple-700 rounded-lg p-4">
+                        <label class="flex items-center gap-3 cursor-pointer">
+                            <input
+                                type="checkbox"
+                                x-model="usePrivateServer"
+                                class="w-5 h-5 rounded bg-gray-700 border-gray-600 text-purple-600 focus:ring-purple-500"
+                            >
+                            <div>
+                                <span class="font-medium text-purple-300">Connect to Private Server</span>
+                                <p class="text-sm text-gray-400">Enable to connect to a Growtopia PS instead of official servers</p>
+                            </div>
+                        </label>
+                    </div>
+
+                    <!-- Private Server Config -->
+                    <div x-show="usePrivateServer" x-cloak class="bg-gray-700/50 rounded-lg p-4 space-y-3">
+                        <h3 class="font-medium text-purple-300 mb-2">Private Server Configuration</h3>
+                        
+                        <div>
+                            <label class="block text-sm font-medium mb-1">Server IP / Host</label>
+                            <input
+                                x-model="privateServer.serverIp"
+                                type="text"
+                                class="w-full bg-gray-700 border border-gray-600 rounded-lg px-4 py-2 focus:outline-none focus:border-purple-500"
+                                placeholder="192.168.1.100 or ps.example.com"
+                            >
+                        </div>
+                        
+                        <div>
+                            <label class="block text-sm font-medium mb-1">Server Port</label>
+                            <input
+                                x-model="privateServer.serverPort"
+                                type="text"
+                                class="w-full bg-gray-700 border border-gray-600 rounded-lg px-4 py-2 focus:outline-none focus:border-purple-500"
+                                placeholder="17091"
+                            >
+                        </div>
+                        
+                        <div>
+                            <label class="block text-sm font-medium mb-1">Server Data URL (Optional)</label>
+                            <input
+                                x-model="privateServer.serverDataUrl"
+                                type="text"
+                                class="w-full bg-gray-700 border border-gray-600 rounded-lg px-4 py-2 focus:outline-none focus:border-purple-500"
+                                placeholder="Leave empty to use Server IP"
+                            >
+                            <p class="text-xs text-gray-400 mt-1">URL for server_data.php endpoint</p>
+                        </div>
+
+                        <label class="flex items-center gap-2 cursor-pointer">
+                            <input
+                                type="checkbox"
+                                x-model="privateServer.useHttps"
+                                class="w-4 h-4 rounded bg-gray-700 border-gray-600 text-purple-600"
+                            >
+                            <span class="text-sm">Use HTTPS for server data</span>
+                        </label>
+                    </div>
+
                     <!-- Login Method -->
                     <div>
                         <label class="block text-sm font-medium mb-2">Login Method</label>
@@ -465,10 +542,11 @@
                     </div>
 
                     <div x-show="loginMethod === 'google' || loginMethod === 'apple'" x-cloak class="text-sm text-gray-400">
-                        Click "Create Bot" to authenticate via <span x-text="loginMethod"></span>
+                        <p>Note: Google/Apple OAuth requires browser automation which is not available in web mode.</p>
+                        <p class="mt-1">For Private Servers, use Legacy or LTOKEN login method.</p>
                     </div>
 
-                    <!-- SOCKS5 Proxy (Optional) -->
+                    <!-- SOCKS5 Proxy -->
                     <div>
                         <label class="block text-sm font-medium mb-2">SOCKS5 Proxy (Optional)</label>
                         <input
@@ -483,9 +561,10 @@
                     <div class="flex gap-3 pt-4">
                         <button
                             @click="createBot()"
-                            class="flex-1 bg-blue-600 hover:bg-blue-700 px-4 py-2 rounded-lg font-medium transition"
+                            class="flex-1 px-4 py-2 rounded-lg font-medium transition"
+                            :class="usePrivateServer ? 'bg-purple-600 hover:bg-purple-700' : 'bg-blue-600 hover:bg-blue-700'"
                         >
-                            Create Bot
+                            <span x-text="usePrivateServer ? 'Create PS Bot' : 'Create Bot'"></span>
                         </button>
                         <button
                             @click="showAddBot = false"
@@ -503,16 +582,16 @@
             <div class="flex items-center justify-center gap-1">
                 Created with <i data-lucide="heart" class="w-4 h-4 text-red-500"></i> by Cendy
             </div>
+            <div class="text-xs mt-2">
+                Mori Web UI - Private Server Support Enabled
+            </div>
         </footer>
     </div>
 
     <script>
-        // Initialize Lucide icons once on load
         document.addEventListener('DOMContentLoaded', () => {
             lucide.createIcons();
         });
-
-        // Re-initialize icons only when Alpine finishes initialization
         document.addEventListener('alpine:initialized', () => {
             lucide.createIcons();
         });

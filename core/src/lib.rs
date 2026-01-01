@@ -15,7 +15,7 @@ use std::str::FromStr;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::mpsc;
 use std::sync::{Arc, Mutex, RwLock};
-use std::thread::{self, sleep};
+use std::thread;
 use std::time::{Duration, Instant};
 
 mod astar;
@@ -44,6 +44,7 @@ pub use gtworld_r;
 pub use movement_controller::MovementController;
 pub use network_session::NetworkSession;
 pub use runtime_context::RuntimeContext;
+pub use types::server_config::PrivateServerConfig;
 
 pub type TokenFetcher = Box<dyn Fn(String, String) -> String + Send + Sync>;
 
@@ -70,6 +71,7 @@ pub struct Bot {
     pub events: EventBroadcaster,
     pub enet_status: Mutex<ENetStatus>,
     pub peer_status: Mutex<PeerStatus>,
+    pub private_server: Option<PrivateServerConfig>,
 }
 
 impl Bot {
@@ -78,6 +80,17 @@ impl Bot {
         token_fetcher: Option<TokenFetcher>,
         item_database: Arc<RwLock<ItemDatabase>>,
         socks5_config: Option<Socks5Config>,
+    ) -> (Arc<Self>, mpsc::Receiver<BotEvent>) {
+        Self::new_with_ps(login_via, token_fetcher, item_database, socks5_config, None)
+    }
+
+    /// Create a new bot with optional Private Server support
+    pub fn new_with_ps(
+        login_via: types::bot::LoginVia,
+        token_fetcher: Option<TokenFetcher>,
+        item_database: Arc<RwLock<ItemDatabase>>,
+        socks5_config: Option<Socks5Config>,
+        private_server: Option<PrivateServerConfig>,
     ) -> (Arc<Self>, mpsc::Receiver<BotEvent>) {
         let local_addr = SocketAddr::V4(SocketAddrV4::new(Ipv4Addr::UNSPECIFIED, 0));
 
@@ -115,9 +128,15 @@ impl Bot {
                 events: event_broadcaster,
                 enet_status: Mutex::new(ENetStatus::Disconnected),
                 peer_status: Mutex::new(PeerStatus::FetchingServerData),
+                private_server,
             }),
             event_receiver,
         )
+    }
+
+    /// Check if this bot is configured for a private server
+    pub fn is_private_server(&self) -> bool {
+        self.private_server.is_some()
     }
 
     pub fn logon(self: Arc<Self>, data: Option<&str>) {
@@ -144,28 +163,69 @@ impl Bot {
             {
                 let mut login_info = self.auth.login_info();
                 let info_data = login_info.as_mut().expect("Login info not set");
-                let server_data =
-                    server::get_server_data_with_proxy(false, info_data, self.proxy_url.as_deref());
+                
+                // Use private server config if available
+                let server_data = if let Some(ps_config) = &self.private_server {
+                    server::get_private_server_data(ps_config, info_data, self.proxy_url.as_deref())
+                } else {
+                    server::get_server_data_with_proxy(false, info_data, self.proxy_url.as_deref())
+                };
+                
                 match server_data {
                     Ok(data) => {
                         info_data.meta = data.meta.clone();
                         let mut server = self.auth.server_data();
                         *server = Some(data.clone());
-                        let dashboard_data = server::get_dashboard_with_proxy(
-                            &data.loginurl,
-                            info_data,
-                            self.proxy_url.as_deref(),
-                        )
-                        .expect("Failed to get dashboard data");
-                        let mut dashboard = self.auth.dashboard_links();
-                        *dashboard = Some(dashboard_data);
+                        
+                        // Skip dashboard for private servers that don't have it
+                        if self.private_server.is_none() || !self.private_server.as_ref().unwrap().skip_login_url {
+                            let dashboard_data = server::get_dashboard_with_proxy(
+                                &data.loginurl,
+                                info_data,
+                                self.proxy_url.as_deref(),
+                            )
+                            .expect("Failed to get dashboard data");
+                            let mut dashboard = self.auth.dashboard_links();
+                            *dashboard = Some(dashboard_data);
+                        }
                     }
                     Err(e) => {
-                        todo!("Handle error: {}", e);
+                        println!("Error getting server data: {}", e);
+                        // For private servers, try direct connection anyway
+                        if let Some(ps_config) = &self.private_server {
+                            let mut server = self.auth.server_data();
+                            *server = Some(crate::types::server_data::ServerData {
+                                server: ps_config.server_ip.clone(),
+                                port: ps_config.server_port,
+                                loginurl: ps_config.server_data_url.clone(),
+                                server_type: 1,
+                                beta_server: String::new(),
+                                beta_loginurl: String::new(),
+                                beta_port: 0,
+                                beta_type: 0,
+                                beta2_server: String::new(),
+                                beta2_loginurl: String::new(),
+                                beta2_port: 0,
+                                beta2_type: 0,
+                                beta3_server: String::new(),
+                                beta3_loginurl: String::new(),
+                                beta3_port: 0,
+                                beta3_type: 0,
+                                type2: 0,
+                                maint: None,
+                                meta: String::new(),
+                            });
+                        } else {
+                            todo!("Handle error: {}", e);
+                        }
                     }
                 }
             }
-            self.get_token();
+            
+            // Skip token fetching for private servers
+            if self.private_server.is_none() {
+                self.get_token();
+            }
         }
 
         {
