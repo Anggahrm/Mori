@@ -154,6 +154,8 @@ impl Bot {
     }
 
     pub fn connect_to_server(&self) {
+        self.runtime.push_log("[Connect] Starting connection...");
+        
         {
             let mut peer_status = self.peer_status.lock().unwrap();
             *peer_status = PeerStatus::FetchingServerData;
@@ -166,19 +168,23 @@ impl Bot {
                 
                 // Use private server config if available
                 let server_data = if let Some(ps_config) = &self.private_server {
+                    self.runtime.push_log(format!("[PS] Fetching server data from: {}", ps_config.get_server_data_url()));
                     server::get_private_server_data(ps_config, info_data, self.proxy_url.as_deref())
                 } else {
+                    self.runtime.push_log("[Official] Fetching server data...");
                     server::get_server_data_with_proxy(false, info_data, self.proxy_url.as_deref())
                 };
                 
                 match server_data {
                     Ok(data) => {
+                        self.runtime.push_log(format!("[OK] Got server: {}:{}", data.server, data.port));
                         info_data.meta = data.meta.clone();
                         let mut server = self.auth.server_data();
                         *server = Some(data.clone());
                         
                         // Skip dashboard for private servers that don't have it
                         if self.private_server.is_none() || !self.private_server.as_ref().unwrap().skip_login_url {
+                            self.runtime.push_log("[Dashboard] Fetching login dashboard...");
                             let dashboard_data = server::get_dashboard_with_proxy(
                                 &data.loginurl,
                                 info_data,
@@ -187,12 +193,16 @@ impl Bot {
                             .expect("Failed to get dashboard data");
                             let mut dashboard = self.auth.dashboard_links();
                             *dashboard = Some(dashboard_data);
+                        } else {
+                            self.runtime.push_log("[PS] Skipping dashboard (private server)");
                         }
                     }
                     Err(e) => {
+                        self.runtime.push_log(format!("[ERROR] Server data failed: {}", e));
                         println!("Error getting server data: {}", e);
                         // For private servers, try direct connection anyway
                         if let Some(ps_config) = &self.private_server {
+                            self.runtime.push_log(format!("[PS] Using direct connection to {}:{}", ps_config.server_ip, ps_config.server_port));
                             let mut server = self.auth.server_data();
                             *server = Some(crate::types::server_data::ServerData {
                                 server: ps_config.server_ip.clone(),
@@ -224,7 +234,10 @@ impl Bot {
             
             // Skip token fetching for private servers
             if self.private_server.is_none() {
+                self.runtime.push_log("[Token] Fetching authentication token...");
                 self.get_token();
+            } else {
+                self.runtime.push_log("[PS] Skipping token fetch (private server)");
             }
         }
 
@@ -241,10 +254,12 @@ impl Bot {
         let server_address = {
             let server_data = self.auth.server_data();
             let server = server_data.as_ref().expect("Server data not set");
+            self.runtime.push_log(format!("[ENet] Connecting to {}:{}", server.server, server.port));
             SocketAddr::from_str(&format!("{}:{}", server.server, server.port)).unwrap()
         };
 
         self.network.connect(server_address);
+        self.runtime.push_log("[ENet] Connection request sent, waiting for response...");
     }
 
     pub fn get_token(&self) {
@@ -473,6 +488,7 @@ impl Bot {
                 if let Some(event) = event {
                     match event {
                         rusty_enet::EventNoRef::Connect { peer, .. } => {
+                            self.runtime.push_log("[ENet] Connected to server!");
                             println!("Connected to server");
                             self.network.set_peer_id(Some(peer));
 
@@ -505,7 +521,8 @@ impl Bot {
                             }
                             packet_handler::handle(&self, data);
                         }
-                        rusty_enet::EventNoRef::Disconnect { peer: _, data: _ } => {
+                        rusty_enet::EventNoRef::Disconnect { peer: _, data } => {
+                            self.runtime.push_log(format!("[ENet] Disconnected from server (code: {})", data));
                             println!("Disconnected from server");
                             self.network.set_peer_id(None);
 
