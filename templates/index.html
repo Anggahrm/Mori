@@ -4,7 +4,114 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Mori - Growtopia Multi Bot</title>
-    <link rel="stylesheet" href="/static/css/style.css">
+    <style>
+        :root {
+            --bg-primary: #121212;
+            --bg-secondary: #1e1e1e;
+            --bg-tertiary: #2d2d2d;
+            --bg-hover: #3d3d3d;
+            --text-primary: #e0e0e0;
+            --text-secondary: #a0a0a0;
+            --text-muted: #707070;
+            --border-color: #404040;
+            --accent-blue: #3b82f6;
+            --accent-blue-hover: #2563eb;
+            --accent-green: #22c55e;
+            --accent-green-hover: #16a34a;
+            --accent-red: #ef4444;
+            --accent-red-hover: #dc2626;
+            --accent-purple: #a855f7;
+            --accent-purple-hover: #9333ea;
+            --accent-yellow: #eab308;
+        }
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
+            background-color: var(--bg-primary);
+            color: var(--text-primary);
+            min-height: 100vh;
+        }
+        .container { max-width: 1200px; margin: 0 auto; padding: 0 1rem; }
+        .header { background-color: var(--bg-secondary); border-bottom: 1px solid var(--border-color); padding: 1rem 0; }
+        .header-content { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 1rem; }
+        .logo { display: flex; align-items: center; gap: 0.75rem; }
+        .logo h1 { font-size: 1.5rem; font-weight: bold; color: var(--accent-blue); }
+        .badge { font-size: 0.75rem; padding: 0.25rem 0.5rem; border-radius: 9999px; background-color: var(--accent-green); color: white; }
+        .badge-purple { background-color: var(--accent-purple); }
+        .header-actions { display: flex; align-items: center; gap: 1rem; flex-wrap: wrap; }
+        .btn {
+            padding: 0.5rem 1rem; border-radius: 0.5rem; border: none; cursor: pointer;
+            font-size: 0.875rem; font-weight: 500; transition: background-color 0.2s;
+            display: inline-flex; align-items: center; gap: 0.5rem;
+        }
+        .btn-primary { background-color: var(--accent-blue); color: white; }
+        .btn-primary:hover { background-color: var(--accent-blue-hover); }
+        .btn-success { background-color: var(--accent-green); color: white; }
+        .btn-success:hover { background-color: var(--accent-green-hover); }
+        .btn-danger { background-color: var(--accent-red); color: white; }
+        .btn-danger:hover { background-color: var(--accent-red-hover); }
+        .btn-purple { background-color: var(--accent-purple); color: white; }
+        .btn-purple:hover { background-color: var(--accent-purple-hover); }
+        .btn-secondary { background-color: var(--bg-tertiary); color: var(--text-primary); }
+        .btn-secondary:hover { background-color: var(--bg-hover); }
+        .form-group { margin-bottom: 1rem; }
+        .form-label { display: block; font-size: 0.875rem; font-weight: 500; margin-bottom: 0.5rem; color: var(--text-primary); }
+        .form-input, .form-select {
+            width: 100%; padding: 0.5rem 1rem; border-radius: 0.5rem;
+            border: 1px solid var(--border-color); background-color: var(--bg-tertiary);
+            color: var(--text-primary); font-size: 0.875rem;
+        }
+        .form-input:focus, .form-select:focus { outline: none; border-color: var(--accent-blue); }
+        .form-checkbox { display: flex; align-items: center; gap: 0.5rem; cursor: pointer; }
+        .form-checkbox input { width: 1.25rem; height: 1.25rem; accent-color: var(--accent-purple); }
+        .card { background-color: var(--bg-secondary); border: 1px solid var(--border-color); border-radius: 0.5rem; padding: 1.5rem; }
+        .card-title { font-size: 1.25rem; font-weight: bold; margin-bottom: 1rem; }
+        .main-content { padding: 1.5rem 0; }
+        .grid { display: grid; gap: 1.5rem; }
+        .grid-cols-3 { grid-template-columns: 1fr 2fr; }
+        @media (max-width: 768px) { .grid-cols-3 { grid-template-columns: 1fr; } }
+        .bot-list { display: flex; flex-direction: column; gap: 0.5rem; }
+        .bot-item { background-color: var(--bg-tertiary); border: 1px solid var(--border-color); border-radius: 0.5rem; padding: 0.75rem; cursor: pointer; transition: border-color 0.2s; }
+        .bot-item:hover { border-color: var(--text-muted); }
+        .bot-item.selected { border-color: var(--accent-blue); }
+        .bot-item-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem; }
+        .bot-name { font-weight: 500; display: flex; align-items: center; gap: 0.5rem; }
+        .status-badge { font-size: 0.75rem; padding: 0.25rem 0.5rem; border-radius: 9999px; }
+        .status-connected { background-color: var(--accent-green); color: white; }
+        .status-connecting { background-color: var(--accent-yellow); color: black; }
+        .status-disconnected { background-color: var(--bg-hover); color: var(--text-secondary); }
+        .bot-stats { font-size: 0.875rem; color: var(--text-secondary); display: flex; flex-direction: column; gap: 0.25rem; }
+        .stats-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 1rem; margin-bottom: 1rem; }
+        @media (min-width: 640px) { .stats-grid { grid-template-columns: repeat(4, 1fr); } }
+        .stat-card { background-color: var(--bg-tertiary); border-radius: 0.5rem; padding: 1rem; }
+        .stat-label { font-size: 0.875rem; color: var(--text-secondary); }
+        .stat-value { font-size: 1.5rem; font-weight: bold; }
+        .stat-value.gems { color: var(--accent-yellow); }
+        .stat-value.ping { color: var(--accent-green); }
+        .stat-value.world { color: var(--accent-blue); }
+        .movement-grid { display: flex; flex-direction: column; align-items: center; gap: 0.5rem; }
+        .movement-row { display: flex; gap: 0.5rem; }
+        .movement-btn { width: 3.5rem; height: 3.5rem; font-size: 1.25rem; justify-content: center; }
+        .movement-center { width: 3.5rem; height: 3.5rem; background-color: var(--bg-tertiary); border-radius: 0.5rem; display: flex; align-items: center; justify-content: center; color: var(--text-muted); }
+        .actions-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 0.75rem; }
+        @media (min-width: 640px) { .actions-grid { grid-template-columns: repeat(3, 1fr); } }
+        .modal-overlay { position: fixed; inset: 0; background-color: rgba(0, 0, 0, 0.7); display: none; align-items: center; justify-content: center; z-index: 50; padding: 1rem; }
+        .modal-overlay.show { display: flex; }
+        .modal { background-color: var(--bg-secondary); border: 1px solid var(--border-color); border-radius: 0.5rem; padding: 1.5rem; max-width: 32rem; width: 100%; max-height: 90vh; overflow-y: auto; }
+        .modal-title { font-size: 1.5rem; font-weight: bold; margin-bottom: 1.5rem; }
+        .modal-actions { display: flex; gap: 0.75rem; margin-top: 1.5rem; }
+        .modal-actions .btn { flex: 1; }
+        .ps-config { background-color: var(--bg-tertiary); border-radius: 0.5rem; padding: 1rem; margin-bottom: 1rem; display: none; }
+        .ps-config.show { display: block; }
+        .ps-config-title { font-weight: 500; color: var(--accent-purple); margin-bottom: 1rem; }
+        .login-methods { display: grid; grid-template-columns: repeat(2, 1fr); gap: 0.5rem; }
+        @media (min-width: 480px) { .login-methods { grid-template-columns: repeat(4, 1fr); } }
+        .login-method-btn { padding: 0.5rem; text-align: center; }
+        .login-method-btn.active { background-color: var(--accent-blue); color: white; }
+        .empty-state { text-align: center; color: var(--text-muted); padding: 2rem; }
+        .footer { text-align: center; padding: 2rem 0; color: var(--text-muted); font-size: 0.875rem; }
+        .hidden { display: none !important; }
+    </style>
 </head>
 <body>
     <div id="app">
@@ -62,7 +169,7 @@
     </div>
 
     <!-- Add Bot Modal -->
-    <div id="addBotModal" class="modal-overlay hidden">
+    <div id="addBotModal" class="modal-overlay">
         <div class="modal">
             <h2 class="modal-title">Add New Bot</h2>
             
@@ -78,7 +185,7 @@
             </div>
 
             <!-- PS Config -->
-            <div id="psConfig" class="ps-config hidden">
+            <div id="psConfig" class="ps-config">
                 <div class="ps-config-title">Private Server Configuration</div>
                 <div class="form-group">
                     <label class="form-label">Server IP</label>
@@ -108,7 +215,7 @@
                     <button class="btn btn-secondary login-method-btn" onclick="setLoginMethod('apple')">Apple</button>
                     <button class="btn btn-secondary login-method-btn" onclick="setLoginMethod('ltoken')">LTOKEN</button>
                     <button class="btn btn-secondary login-method-btn active" onclick="setLoginMethod('legacy')">Legacy</button>
-                </div>
+            </div>
             </div>
 
             <!-- Credentials -->
@@ -123,14 +230,14 @@
                 </div>
             </div>
 
-            <div id="ltokenCredentials" class="hidden">
+            <div id="ltokenCredentials" style="display: none;">
                 <div class="form-group">
                     <label class="form-label">LTOKEN (4 values separated by :)</label>
                     <input type="text" id="ltoken" class="form-input" placeholder="value1:value2:value3:value4">
                 </div>
             </div>
 
-            <div id="oauthNote" class="hidden">
+            <div id="oauthNote" style="display: none;">
                 <div class="form-group">
                     <div style="padding: 1rem; background-color: var(--bg-tertiary); border-radius: 0.5rem; color: var(--text-secondary); font-size: 0.875rem;">
                         Note: Google/Apple OAuth requires browser automation which is not available in web mode. Use Legacy or LTOKEN for Private Servers.
@@ -362,11 +469,11 @@
 
         // Modal Functions
         function openAddBotModal() {
-            document.getElementById('addBotModal').classList.remove('hidden');
+            document.getElementById('addBotModal').classList.add('show');
         }
 
         function closeAddBotModal() {
-            document.getElementById('addBotModal').classList.add('hidden');
+            document.getElementById('addBotModal').classList.remove('show');
         }
 
         function togglePSConfig() {
@@ -375,12 +482,12 @@
             const createBtn = document.getElementById('createBotBtn');
             
             if (usePS) {
-                psConfig.classList.remove('hidden');
+                psConfig.classList.add('show');
                 createBtn.textContent = 'Create PS Bot';
                 createBtn.classList.remove('btn-primary');
                 createBtn.classList.add('btn-purple');
             } else {
-                psConfig.classList.add('hidden');
+                psConfig.classList.remove('show');
                 createBtn.textContent = 'Create Bot';
                 createBtn.classList.remove('btn-purple');
                 createBtn.classList.add('btn-primary');
@@ -397,16 +504,16 @@
             event.target.classList.add('active');
 
             // Show/hide credential fields
-            document.getElementById('legacyCredentials').classList.add('hidden');
-            document.getElementById('ltokenCredentials').classList.add('hidden');
-            document.getElementById('oauthNote').classList.add('hidden');
+            document.getElementById('legacyCredentials').style.display = 'none';
+            document.getElementById('ltokenCredentials').style.display = 'none';
+            document.getElementById('oauthNote').style.display = 'none';
 
             if (method === 'legacy') {
-                document.getElementById('legacyCredentials').classList.remove('hidden');
+                document.getElementById('legacyCredentials').style.display = 'block';
             } else if (method === 'ltoken') {
-                document.getElementById('ltokenCredentials').classList.remove('hidden');
+                document.getElementById('ltokenCredentials').style.display = 'block';
             } else {
-                document.getElementById('oauthNote').classList.remove('hidden');
+                document.getElementById('oauthNote').style.display = 'block';
             }
         }
 
