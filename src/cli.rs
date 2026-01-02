@@ -175,9 +175,10 @@ fn main() {
 
     println!("[INFO] Bot is running. Press Ctrl+C to stop.");
 
-    // Keep main thread alive
+    // Keep main thread alive - use park() for more efficient waiting
+    // The event loop thread handles events, main thread just needs to stay alive
     loop {
-        thread::sleep(std::time::Duration::from_secs(1));
+        thread::park();
     }
 }
 

@@ -208,16 +208,18 @@ impl Bot {
             // For private servers, use the direct IP if server data doesn't contain it
             if let Some(ps) = &self.private_server {
                 let server_data = self.auth.server_data();
-                if server_data.is_some() {
-                    let server = server_data.as_ref().unwrap();
-                    SocketAddr::from_str(&format!("{}:{}", server.server, server.port)).unwrap()
+                if let Some(server) = server_data.as_ref() {
+                    SocketAddr::from_str(&format!("{}:{}", server.server, server.port))
+                        .expect("Invalid server address from server data")
                 } else {
-                    SocketAddr::from_str(&format!("{}:{}", ps.server_ip, ps.server_port)).unwrap()
+                    SocketAddr::from_str(&format!("{}:{}", ps.server_ip, ps.server_port))
+                        .expect("Invalid private server address")
                 }
             } else {
                 let server_data = self.auth.server_data();
                 let server = server_data.as_ref().expect("Server data not set");
-                SocketAddr::from_str(&format!("{}:{}", server.server, server.port)).unwrap()
+                SocketAddr::from_str(&format!("{}:{}", server.server, server.port))
+                    .expect("Invalid server address")
             }
         };
 
