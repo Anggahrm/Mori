@@ -4,7 +4,7 @@ use crate::game_world::GameWorld;
 use crate::socks5_udp::Socks5UdpSocket;
 use crate::types::bot::{LoginVia, Scripting, TemporaryData};
 use crate::types::flags::PacketFlag;
-use crate::types::login_info::LoginInfo;
+use crate::types::login_info::{LoginInfo, PrivateServerConfig};
 use crate::types::net_game_packet::{NetGamePacket, NetGamePacketData};
 use crate::types::net_message::NetMessage;
 use crate::types::status::{ENetStatus, PeerStatus};
@@ -70,6 +70,7 @@ pub struct Bot {
     pub events: EventBroadcaster,
     pub enet_status: Mutex<ENetStatus>,
     pub peer_status: Mutex<PeerStatus>,
+    pub private_server: Option<PrivateServerConfig>,
 }
 
 impl Bot {
@@ -78,6 +79,16 @@ impl Bot {
         token_fetcher: Option<TokenFetcher>,
         item_database: Arc<RwLock<ItemDatabase>>,
         socks5_config: Option<Socks5Config>,
+    ) -> (Arc<Self>, mpsc::Receiver<BotEvent>) {
+        Self::new_with_private_server(login_via, token_fetcher, item_database, socks5_config, None)
+    }
+
+    pub fn new_with_private_server(
+        login_via: types::bot::LoginVia,
+        token_fetcher: Option<TokenFetcher>,
+        item_database: Arc<RwLock<ItemDatabase>>,
+        socks5_config: Option<Socks5Config>,
+        private_server: Option<PrivateServerConfig>,
     ) -> (Arc<Self>, mpsc::Receiver<BotEvent>) {
         let local_addr = SocketAddr::V4(SocketAddrV4::new(Ipv4Addr::UNSPECIFIED, 0));
 
@@ -115,6 +126,7 @@ impl Bot {
                 events: event_broadcaster,
                 enet_status: Mutex::new(ENetStatus::Disconnected),
                 peer_status: Mutex::new(PeerStatus::FetchingServerData),
+                private_server,
             }),
             event_receiver,
         )
@@ -144,28 +156,42 @@ impl Bot {
             {
                 let mut login_info = self.auth.login_info();
                 let info_data = login_info.as_mut().expect("Login info not set");
-                let server_data =
-                    server::get_server_data_with_proxy(false, info_data, self.proxy_url.as_deref());
+                
+                // Get server data based on private server config
+                let server_data = if let Some(ps) = &self.private_server {
+                    server::get_server_data_for_private_server(info_data, ps, self.proxy_url.as_deref())
+                } else {
+                    server::get_server_data_with_proxy(false, info_data, self.proxy_url.as_deref())
+                };
+                
                 match server_data {
                     Ok(data) => {
                         info_data.meta = data.meta.clone();
                         let mut server = self.auth.server_data();
                         *server = Some(data.clone());
-                        let dashboard_data = server::get_dashboard_with_proxy(
-                            &data.loginurl,
-                            info_data,
-                            self.proxy_url.as_deref(),
-                        )
-                        .expect("Failed to get dashboard data");
-                        let mut dashboard = self.auth.dashboard_links();
-                        *dashboard = Some(dashboard_data);
+                        
+                        // Only get dashboard for non-private server
+                        if self.private_server.is_none() {
+                            let dashboard_data = server::get_dashboard_with_proxy(
+                                &data.loginurl,
+                                info_data,
+                                self.proxy_url.as_deref(),
+                            )
+                            .expect("Failed to get dashboard data");
+                            let mut dashboard = self.auth.dashboard_links();
+                            *dashboard = Some(dashboard_data);
+                        }
                     }
                     Err(e) => {
                         todo!("Handle error: {}", e);
                     }
                 }
             }
-            self.get_token();
+            
+            // Only get token for non-private server or if it's required
+            if self.private_server.is_none() {
+                self.get_token();
+            }
         }
 
         {
@@ -179,9 +205,20 @@ impl Bot {
         }
 
         let server_address = {
-            let server_data = self.auth.server_data();
-            let server = server_data.as_ref().expect("Server data not set");
-            SocketAddr::from_str(&format!("{}:{}", server.server, server.port)).unwrap()
+            // For private servers, use the direct IP if server data doesn't contain it
+            if let Some(ps) = &self.private_server {
+                let server_data = self.auth.server_data();
+                if server_data.is_some() {
+                    let server = server_data.as_ref().unwrap();
+                    SocketAddr::from_str(&format!("{}:{}", server.server, server.port)).unwrap()
+                } else {
+                    SocketAddr::from_str(&format!("{}:{}", ps.server_ip, ps.server_port)).unwrap()
+                }
+            } else {
+                let server_data = self.auth.server_data();
+                let server = server_data.as_ref().expect("Server data not set");
+                SocketAddr::from_str(&format!("{}:{}", server.server, server.port)).unwrap()
+            }
         };
 
         self.network.connect(server_address);

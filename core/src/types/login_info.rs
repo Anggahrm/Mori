@@ -1,6 +1,23 @@
 use crate::utils;
 use crate::utils::proton::HashMode;
 
+#[derive(Debug, Clone)]
+pub struct PrivateServerConfig {
+    pub host: String,
+    pub server_ip: String,
+    pub server_port: u16,
+}
+
+impl PrivateServerConfig {
+    pub fn new(host: &str, server_ip: &str, server_port: u16) -> Self {
+        Self {
+            host: host.to_string(),
+            server_ip: server_ip.to_string(),
+            server_port,
+        }
+    }
+}
+
 #[derive(Debug, Default)]
 pub struct LoginInfo {
     pub uuid: String,
@@ -43,8 +60,8 @@ impl LoginInfo {
             tank_id_name: String::new(),
             tank_id_pass: String::new(),
             f: "1".to_string(),
-            protocol: "217".to_string(),
-            game_version: "5.33".to_string(),
+            protocol: "225".to_string(),
+            game_version: "5.39".to_string(),
             fz: "22243512".to_string(),
             cbits: "1024".to_string(),
             player_age: "20".to_string(),

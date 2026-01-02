@@ -1,4 +1,4 @@
-use crate::types::login_info::LoginInfo;
+use crate::types::login_info::{LoginInfo, PrivateServerConfig};
 use crate::types::server_data::ServerData;
 use anyhow::Result;
 use scraper::{Html, Selector};
@@ -18,6 +18,15 @@ pub fn check_token(
     login_info: &str,
     proxy: Option<&str>,
 ) -> Result<String> {
+    check_token_with_private_server(token, login_info, proxy, None)
+}
+
+pub fn check_token_with_private_server(
+    token: &str,
+    login_info: &str,
+    proxy: Option<&str>,
+    private_server: Option<&PrivateServerConfig>,
+) -> Result<String> {
     if token.is_empty() {
         return Err(anyhow::anyhow!("Token is empty"));
     }
@@ -29,8 +38,14 @@ pub fn check_token(
         ureq::Agent::new_with_defaults()
     };
 
+    let check_token_url = if let Some(ps) = private_server {
+        format!("https://{}/player/growid/checktoken?valKey=40db4045f2d8c572efe8c4a060605726", ps.host)
+    } else {
+        "https://login.growtopiagame.com/player/growid/checktoken?valKey=40db4045f2d8c572efe8c4a060605726".to_string()
+    };
+
     let req = agent
-        .post("https://login.growtopiagame.com/player/growid/checktoken?valKey=40db4045f2d8c572efe8c4a060605726")
+        .post(&check_token_url)
         .header("User-Agent", "UbiServices_SDK_2022.Release.9_PC64_ansi_static")
         .header("Content-Type", "application/x-www-form-urlencoded")
         .send_form([
@@ -62,10 +77,29 @@ pub fn get_server_data_with_proxy(
     login_info: &LoginInfo,
     proxy: Option<&str>,
 ) -> Result<ServerData> {
-    let url = if alternate {
-        "https://www.growtopia1.com/growtopia/server_data.php"
+    get_server_data_full(alternate, login_info, proxy, None)
+}
+
+pub fn get_server_data_for_private_server(
+    login_info: &LoginInfo,
+    private_server: &PrivateServerConfig,
+    proxy: Option<&str>,
+) -> Result<ServerData> {
+    get_server_data_full(false, login_info, proxy, Some(private_server))
+}
+
+pub fn get_server_data_full(
+    alternate: bool,
+    login_info: &LoginInfo,
+    proxy: Option<&str>,
+    private_server: Option<&PrivateServerConfig>,
+) -> Result<ServerData> {
+    let url = if let Some(ps) = private_server {
+        format!("https://{}/growtopia/server_data.php", ps.host)
+    } else if alternate {
+        "https://www.growtopia1.com/growtopia/server_data.php".to_string()
     } else {
-        "https://www.growtopia2.com/growtopia/server_data.php"
+        "https://www.growtopia2.com/growtopia/server_data.php".to_string()
     };
 
     let agent = if let Some(proxy_url) = proxy {
@@ -76,7 +110,7 @@ pub fn get_server_data_with_proxy(
     };
 
     let body = agent
-        .post(url)
+        .post(&url)
         .header(
             "User-Agent",
             "UbiServices_SDK_2022.Release.9_PC64_ansi_static",
