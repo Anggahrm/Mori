@@ -3,7 +3,7 @@ use std::io::Cursor;
 
 use crate::types::flags::PacketFlag;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Copy)]
 #[repr(u8)]
 pub enum NetGamePacket {
     State,
@@ -77,26 +77,31 @@ pub struct NetGamePacketData {
 }
 
 impl NetGamePacketData {
+    /// Writes the packet data directly into the provided buffer, avoiding a separate allocation.
+    pub fn write_to(&self, buffer: &mut Vec<u8>) {
+        buffer.push(self._type as u8);
+        buffer.push(self.object_type);
+        buffer.push(self.jump_count);
+        buffer.push(self.animation_type);
+        buffer.extend_from_slice(&self.net_id.to_le_bytes());
+        buffer.extend_from_slice(&self.target_net_id.to_le_bytes());
+        buffer.extend_from_slice(&self.flags.bits().to_le_bytes());
+        buffer.extend_from_slice(&self.float_variable.to_le_bytes());
+        buffer.extend_from_slice(&self.value.to_le_bytes());
+        buffer.extend_from_slice(&self.vector_x.to_le_bytes());
+        buffer.extend_from_slice(&self.vector_y.to_le_bytes());
+        buffer.extend_from_slice(&self.vector_x2.to_le_bytes());
+        buffer.extend_from_slice(&self.vector_y2.to_le_bytes());
+        buffer.extend_from_slice(&self.particle_rotation.to_le_bytes());
+        buffer.extend_from_slice(&self.int_x.to_le_bytes());
+        buffer.extend_from_slice(&self.int_y.to_le_bytes());
+        buffer.extend_from_slice(&self.extended_data_length.to_le_bytes());
+    }
+
     pub fn to_bytes(&self) -> Vec<u8> {
-        let mut wtr = vec![];
-        wtr.push(self._type.clone() as u8);
-        wtr.push(self.object_type);
-        wtr.push(self.jump_count);
-        wtr.push(self.animation_type);
-        wtr.extend(&self.net_id.to_le_bytes());
-        wtr.extend(&self.target_net_id.to_le_bytes());
-        wtr.extend(&self.flags.bits().to_le_bytes());
-        wtr.extend(&self.float_variable.to_le_bytes());
-        wtr.extend(&self.value.to_le_bytes());
-        wtr.extend(&self.vector_x.to_le_bytes());
-        wtr.extend(&self.vector_y.to_le_bytes());
-        wtr.extend(&self.vector_x2.to_le_bytes());
-        wtr.extend(&self.vector_y2.to_le_bytes());
-        wtr.extend(&self.particle_rotation.to_le_bytes());
-        wtr.extend(&self.int_x.to_le_bytes());
-        wtr.extend(&self.int_y.to_le_bytes());
-        wtr.extend(&self.extended_data_length.to_le_bytes());
-        wtr
+        let mut buffer = Vec::with_capacity(56);
+        self.write_to(&mut buffer);
+        buffer
     }
 
     pub fn from_bytes(data: &[u8]) -> Option<Self> {

@@ -1,4 +1,5 @@
 use crate::events::{BotEvent, EventType};
+use crate::lua;
 use crate::types::net_game_packet::{NetGamePacket, NetGamePacketData};
 use crate::types::net_message::NetMessage;
 use crate::utils::proton::HashMode;
@@ -67,11 +68,13 @@ pub fn handle(bot: &Arc<Bot>, data: &[u8]) {
                     login_info.protocol, login_info.ltoken, login_info.platform_id
                 );
             }
-            bot.send_packet(NetMessage::GenericText, data.as_bytes(), None, true);
+            bot.send_text_packet(NetMessage::GenericText, data.as_bytes());
         }
         NetMessage::GameMessage => {
             let message = String::from_utf8_lossy(&data[4..]).to_string();
             println!("GameMessage: {}", message);
+
+            lua::invoke_callbacks(bot, "onTextPacket", (3u32, message.clone()));
 
             if message.contains("logon_fail") {
                 bot.disconnect();
@@ -99,14 +102,17 @@ pub fn handle(bot: &Arc<Bot>, data: &[u8]) {
                     let item_database_lock = bot.world.item_database.read().unwrap();
                     let item_database = item_database_lock.deref();
                     let mut world_lock = bot.world.data.lock().unwrap();
-                    let _ = world_lock.parse(&data[60..], &item_database);
+                    let _ = world_lock.parse(&data[60..], item_database);
 
                     // Emit WorldLoaded event
+                    let world_name = world_lock.name.clone();
                     bot.events.emit(BotEvent::new(EventType::WorldLoaded {
-                        name: world_lock.name.clone(),
+                        name: world_name.clone(),
                         width: world_lock.width,
                         height: world_lock.height,
                     }));
+
+                    lua::invoke_callbacks(bot, "onWorldLoad", world_name);
 
                     // Update peer status to InWorld
                     {
@@ -220,7 +226,7 @@ pub fn handle(bot: &Arc<Bot>, data: &[u8]) {
                         data.vector_y2 = gravity;
                     }
 
-                    bot.send_packet(NetMessage::GamePacket, &data.to_bytes(), None, true);
+                    bot.send_game_packet(&data, None, true);
                 }
                 NetGamePacket::SendItemDatabaseData => {
                     let data = &data[60..];
@@ -229,11 +235,9 @@ pub fn handle(bot: &Arc<Bot>, data: &[u8]) {
                     decoder.read_to_end(&mut data).unwrap();
                     fs::write("items.dat", &data).unwrap();
 
-                    bot.send_packet(
+                    bot.send_text_packet(
                         NetMessage::GenericText,
-                        "action|enter_game\n".to_string().as_bytes(),
-                        None,
-                        true,
+                        b"action|enter_game\n",
                     );
                     bot.runtime.set_redirecting(false);
 
@@ -268,13 +272,14 @@ fn handle_tile_change_request(bot: &Bot, tank_packet: &NetGamePacketData) {
         update_tile_for_punch(bot, tank_packet);
         update_single_tile_astar(bot, tank_packet.int_x as u32, tank_packet.int_y as u32, 0);
 
-        // Emit TileChanged event (punch = remove)
         bot.events.emit(BotEvent::new(EventType::TileChanged {
             x: tank_packet.int_x as u32,
             y: tank_packet.int_y as u32,
             foreground_id: 0,
             background_id: 0,
         }));
+
+        lua::invoke_callbacks(bot, "onTileChange", (tank_packet.int_x, tank_packet.int_y, 0u32));
 
         return;
     }
@@ -311,6 +316,8 @@ fn handle_tile_change_request(bot: &Bot, tank_packet: &NetGamePacketData) {
         foreground_id: fg,
         background_id: bg,
     }));
+
+    lua::invoke_callbacks(bot, "onTileChange", (tank_packet.int_x, tank_packet.int_y, tank_packet.value));
 }
 
 fn handle_item_change_object(bot: &Bot, tank_packet: &NetGamePacketData) {
@@ -339,7 +346,6 @@ fn handle_item_change_object(bot: &Bot, tank_packet: &NetGamePacketData) {
 
             drop(world);
 
-            // Emit ItemDropped event
             bot.events.emit(BotEvent::new(EventType::ItemDropped {
                 uid: item_uid,
                 item_id,
@@ -347,6 +353,8 @@ fn handle_item_change_object(bot: &Bot, tank_packet: &NetGamePacketData) {
                 y: item_y,
                 count: item_count,
             }));
+
+            lua::invoke_callbacks(bot, "onItemDrop", (item_uid, item_id as u32, item_x, item_y, item_count as u32));
         }
         net_id if net_id == u32::MAX - 3 => {
             if let Some(obj) = world.dropped.items.iter_mut().find(|obj| {
@@ -382,13 +390,14 @@ fn handle_item_change_object(bot: &Bot, tank_packet: &NetGamePacketData) {
 
                 drop(world);
 
-                // Emit ItemCollected event (only for our own collection)
                 if is_our_collection {
                     bot.events.emit(BotEvent::new(EventType::ItemCollected {
                         uid: item_uid,
                         item_id,
                         count: item_count,
                     }));
+
+                    lua::invoke_callbacks(bot, "onItemCollect", (item_uid, item_id as u32, item_count as u32));
                 }
             } else {
                 drop(world);

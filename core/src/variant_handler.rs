@@ -1,3 +1,5 @@
+use crate::lua;
+use crate::types::bot::LuaPlayer;
 use crate::types::net_message::NetMessage;
 use crate::types::player::Player;
 use crate::types::status::PeerStatus;
@@ -13,6 +15,14 @@ pub fn handle(bot: &Arc<Bot>, data: &[u8]) {
     let function_call: String = variant.get(0).unwrap().as_string();
 
     println!("Function call: {}", function_call);
+
+    // Fire onVariant callback with variant list as Lua table
+    if lua::has_callbacks(bot, "onVariant") {
+        let lua = &bot.scripting.lua;
+        if let Ok(table) = variant_list_to_lua_table(lua, &variant) {
+            lua::invoke_callbacks(bot, "onVariant", table);
+        }
+    }
 
     match function_call.as_str() {
         "OnSendToServer" => {
@@ -56,11 +66,9 @@ pub fn handle(bot: &Arc<Bot>, data: &[u8]) {
                     ) as u32;
 
                     if hash == server_hash {
-                        bot.send_packet(
+                        bot.send_text_packet(
                             NetMessage::GenericText,
-                            "action|enter_game\n".to_string().as_bytes(),
-                            None,
-                            true,
+                            b"action|enter_game\n",
                         );
                         bot.runtime.set_redirecting(false);
                         let item_database = gtitem_r::load_from_file("items.dat")
@@ -68,7 +76,6 @@ pub fn handle(bot: &Arc<Bot>, data: &[u8]) {
                         let mut item_database_lock = bot.world.item_database.write().unwrap();
                         *item_database_lock = item_database;
 
-                        // Update peer status to InGame
                         {
                             let mut peer_status = bot.peer_status.lock().unwrap();
                             *peer_status = PeerStatus::InGame;
@@ -82,65 +89,29 @@ pub fn handle(bot: &Arc<Bot>, data: &[u8]) {
                 }
             }
 
-            bot.send_packet(
+            bot.send_text_packet(
                 NetMessage::GenericText,
-                "action|refresh_item_data\n".to_string().as_bytes(),
-                None,
-                true,
+                b"action|refresh_item_data\n",
             );
         }
         "OnSetPos" => {
             let pos = variant.get(1).unwrap().as_vec2();
             bot.movement.set_position(pos.0, pos.1);
+
+            lua::invoke_callbacks(bot, "onSetPos", (pos.0, pos.1));
         }
         "OnTalkBubble" => {
+            let net_id_val = variant.get(1).unwrap().as_int32();
             let message = variant.get(2).unwrap().as_string();
             println!("[TALK] {}", message);
 
-            if message.contains("tcacc") {
-                let has_access = bot.has_access();
-                if has_access {
-                    bot.say("I have access!");
-                } else {
-                    bot.say("I don't have access!");
-                }
-            }
-
-            if message.contains("tpos") {
-                let pos = bot.movement.position();
-                bot.say(&format!("My position is ({}, {})", pos.0, pos.1));
-            }
-
-            if message.contains("tfp") {
-                bot.find_path(20, 52);
-            }
-
-            if message.contains("tacc") {
-                bot.accept_access();
-            }
-
-            if message.contains("tpunch") {
-                let bot_clone = Arc::clone(bot);
-                std::thread::spawn(move || {
-                    for _ in 0..10 {
-                        bot_clone.punch(1, 1);
-                        std::thread::sleep(std::time::Duration::from_millis(300));
-                    }
-                });
-            }
-
-            if message.contains("warp") {
-                let parts: Vec<&str> = message.split_whitespace().collect();
-                if parts.len() >= 2 {
-                    let world_name = parts[1].to_string();
-                    println!("Warping to world: {}", world_name);
-                    bot.warp(world_name);
-                }
-            }
+            lua::invoke_callbacks(bot, "onChat", (net_id_val, message.clone()));
         }
         "OnConsoleMessage" => {
             let message = variant.get(1).unwrap().as_string();
             println!("[CONSOLE] {}", message);
+
+            lua::invoke_callbacks(bot, "onConsole", message);
         }
         "OnSetBux" => {
             let gems = variant.get(1).unwrap().as_int32();
@@ -159,6 +130,9 @@ pub fn handle(bot: &Arc<Bot>, data: &[u8]) {
 
             let mut players = bot.world.players.lock().unwrap();
             players.remove(&net_id);
+            drop(players);
+
+            lua::invoke_callbacks(bot, "onPlayerLeave", net_id);
         }
         "OnSpawn" => {
             let message = variant.get(1).unwrap().as_string();
@@ -218,12 +192,27 @@ pub fn handle(bot: &Arc<Bot>, data: &[u8]) {
                     bot.leave();
                 }
 
+                // Fire onPlayerJoin before inserting
+                lua::invoke_callbacks(bot, "onPlayerJoin", LuaPlayer {
+                    name: player.name.clone(),
+                    net_id: player.net_id,
+                    user_id: player.user_id,
+                    country: player.country.clone(),
+                    pos_x: player.position.0,
+                    pos_y: player.position.1,
+                    invisible: player.invisible,
+                    is_mod: player.m_state == 1,
+                });
+
                 let mut players = bot.world.players.lock().unwrap();
                 players.insert(player.net_id, player);
             }
         }
         "OnDialogRequest" => {
             let message = variant.get(1).unwrap().as_string();
+
+            lua::invoke_callbacks(bot, "onDialogRequest", message.clone());
+
             let cb = {
                 let dialog_callback = bot.temporary_data.dialog_callback.lock().unwrap();
                 dialog_callback.clone()
@@ -234,18 +223,58 @@ pub fn handle(bot: &Arc<Bot>, data: &[u8]) {
             }
 
             if message.contains("Gazette") {
-                bot.send_packet(
+                bot.send_text_packet(
                     NetMessage::GenericText,
-                    "action|dialog_return\ndialog_name|gazette\nbuttonClicked|banner\n"
-                        .to_string()
-                        .as_bytes(),
-                    None,
-                    true,
+                    b"action|dialog_return\ndialog_name|gazette\nbuttonClicked|banner\n",
                 );
             }
         }
         _ => {}
     }
+}
+
+fn variant_list_to_lua_table(
+    lua: &mlua::Lua,
+    variant: &VariantList,
+) -> mlua::Result<mlua::Table> {
+    let table = lua.create_table()?;
+    let mut i = 0;
+    while let Some(v) = variant.get(i) {
+        {
+            match v {
+                crate::utils::variant::Variant::String(s) => {
+                    table.set(i + 1, s.clone())?;
+                }
+                crate::utils::variant::Variant::Float(f) => {
+                    table.set(i + 1, *f)?;
+                }
+                crate::utils::variant::Variant::Unsigned(u) => {
+                    table.set(i + 1, *u)?;
+                }
+                crate::utils::variant::Variant::Signed(s) => {
+                    table.set(i + 1, *s)?;
+                }
+                crate::utils::variant::Variant::Vec2(xy) => {
+                    let v = lua.create_table()?;
+                    v.set("x", xy.0)?;
+                    v.set("y", xy.1)?;
+                    table.set(i + 1, v)?;
+                }
+                crate::utils::variant::Variant::Vec3(xyz) => {
+                    let v = lua.create_table()?;
+                    v.set("x", xyz.0)?;
+                    v.set("y", xyz.1)?;
+                    v.set("z", xyz.2)?;
+                    table.set(i + 1, v)?;
+                }
+                _ => {
+                    table.set(i + 1, mlua::Value::Nil)?;
+                }
+            }
+        }
+        i += 1;
+    }
+    Ok(table)
 }
 
 fn parse_and_store_as_map(input: &str) -> HashMap<String, String> {

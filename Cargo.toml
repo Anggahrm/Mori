@@ -24,3 +24,6 @@ eframe = "0.33.0"
 egui_extras = { version = "0.33.0", features = ["svg"] }
 egui_material_icons = "0.5.0"
 
+[patch."https://github.com/cloei/gtitem-r"]
+gtitem-r = { path = "core/gtitem-r" }
+

@@ -15,7 +15,7 @@ use std::str::FromStr;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::mpsc;
 use std::sync::{Arc, Mutex, RwLock};
-use std::thread::{self, sleep};
+use std::thread;
 use std::time::{Duration, Instant};
 
 mod astar;
@@ -250,63 +250,59 @@ impl Bot {
         }
     }
 
-    pub fn send_packet(
+    pub fn send_text_packet(&self, msg_type: NetMessage, text: &[u8]) {
+        let total_len = 4 + text.len() + 1;
+        let mut buffer = Vec::with_capacity(total_len);
+        buffer.extend_from_slice(&(msg_type as u32).to_le_bytes());
+        buffer.extend_from_slice(text);
+        buffer.push(0);
+
+        let packet = Packet::reliable(buffer);
+        if !self.network.send(packet) {
+            self.runtime.push_log("Cannot send packet: No active peer connection.".to_string());
+        }
+    }
+
+    pub fn send_game_packet(
         &self,
-        packet_type: NetMessage,
-        packet_data: &[u8],
-        extended_data: Option<&[u8]>,
+        pkt: &NetGamePacketData,
+        ext_data: Option<&[u8]>,
         reliable: bool,
     ) {
-        const MAX_PACKET_SIZE: usize = 1_000_000;
+        const GAME_PACKET_DATA_SIZE: usize = 56;
+        const MAX_SIZE: usize = 1_000_001;
 
-        if packet_data.len() > MAX_PACKET_SIZE {
-            println!(
-                "Error: Attempted to send huge packet of size {}",
-                packet_data.len()
-            );
+        let ext_len = if pkt.flags.contains(PacketFlag::EXTENDED) {
+            pkt.extended_data_length as usize
+        } else {
+            0
+        };
+        let total_len = 4 + GAME_PACKET_DATA_SIZE + ext_len;
+
+        if total_len >= MAX_SIZE {
             return;
         }
 
-        let mut final_payload = Vec::new();
-        let mut is_special_case = false;
+        let mut buffer = Vec::with_capacity(total_len);
+        buffer.extend_from_slice(&(NetMessage::GamePacket as u32).to_le_bytes());
+        pkt.write_to(&mut buffer);
 
-        if let NetMessage::GamePacket = packet_type {
-            if packet_data.len() >= 16 {
-                let flags_bytes: [u8; 4] = packet_data[12..16]
-                    .try_into()
-                    .expect("Slice with incorrect length");
-                let flags = u32::from_le_bytes(flags_bytes);
-
-                if (flags & 8) != 0 {
-                    is_special_case = true;
-                }
-            }
-        }
-
-        final_payload.extend_from_slice(&(packet_type as u32).to_le_bytes());
-        final_payload.extend_from_slice(packet_data);
-
-        if is_special_case {
-            if let Some(ext_data) = extended_data {
-                if packet_data.len() >= 56 {
-                    let len_bytes: [u8; 4] = packet_data[52..56]
-                        .try_into()
-                        .expect("Slice with incorrect length");
-                    let extended_len = u32::from_le_bytes(len_bytes) as usize;
-
-                    final_payload.extend_from_slice(&ext_data[..extended_len]);
+        if ext_len > 0 {
+            if let Some(data) = ext_data {
+                if data.len() >= ext_len {
+                    buffer.extend_from_slice(&data[..ext_len]);
                 }
             }
         }
 
         let enet_packet = if reliable {
-            Packet::reliable(final_payload)
+            Packet::reliable(buffer)
         } else {
-            Packet::unreliable(final_payload)
+            Packet::unreliable(buffer)
         };
 
         if !self.network.send(enet_packet) {
-            println!("Cannot send packet: No active peer connection.");
+            self.runtime.push_log("Cannot send packet: No active peer connection.".to_string());
         }
     }
 
@@ -432,7 +428,9 @@ impl Bot {
                                 }
                             };
                             self.events
-                                .emit(BotEvent::new(EventType::Connected { server, port }));
+                                .emit(BotEvent::new(EventType::Connected { server: server.clone(), port }));
+
+                            lua::invoke_callbacks(&self, "onConnect", (server, port));
                         }
                         rusty_enet::EventNoRef::Receive {
                             peer: _,
@@ -454,9 +452,10 @@ impl Bot {
                                 *enet_status = ENetStatus::Disconnected;
                             }
 
-                            // Emit Disconnected event
                             self.events
                                 .emit(BotEvent::new(EventType::Disconnected { reason: None }));
+
+                            lua::invoke_callbacks(&self, "onDisconnect", ());
                             break;
                         }
                     }
@@ -469,30 +468,24 @@ impl Bot {
 // packet methods
 impl Bot {
     pub fn say(&self, message: &str) {
-        self.send_packet(
+        self.send_text_packet(
             NetMessage::GenericText,
             format!("action|input\n|text|{}\n", message).as_bytes(),
-            None,
-            true,
         );
     }
 
     pub fn warp(&self, world_name: String) {
-        self.send_packet(
+        self.send_text_packet(
             NetMessage::GameMessage,
             format!("action|join_request\nname|{}\ninvitedWorld|0\n", world_name).as_bytes(),
-            None,
-            true,
         );
     }
 
     pub fn leave(&self) {
         if self.peer_status() == PeerStatus::InWorld {
-            self.send_packet(
+            self.send_text_packet(
                 NetMessage::GameMessage,
-                "action|quit_to_exit\n".as_bytes(),
-                None,
-                true,
+                b"action|quit_to_exit\n",
             );
         }
     }
@@ -518,12 +511,7 @@ impl Bot {
             && pkt.int_y <= base_y + 4
             && pkt.int_y >= base_y - 4
         {
-            self.send_packet(
-                NetMessage::GamePacket,
-                pkt.to_bytes().as_slice(),
-                None,
-                true,
-            );
+            self.send_game_packet(&pkt, None, true);
             pkt.flags = if is_punch {
                 PacketFlag::PUNCH
             } else {
@@ -533,12 +521,7 @@ impl Bot {
                 pkt.flags |= PacketFlag::FACING_LEFT;
             }
             pkt._type = NetGamePacket::State;
-            self.send_packet(
-                NetMessage::GamePacket,
-                pkt.to_bytes().as_slice(),
-                None,
-                true,
-            );
+            self.send_game_packet(&pkt, None, true);
             thread::sleep(Duration::from_millis(250));
         }
     }
@@ -552,11 +535,9 @@ impl Bot {
     }
 
     pub fn wrench_player(&self, net_id: u32) {
-        self.send_packet(
+        self.send_text_packet(
             NetMessage::GenericText,
             format!("action|wrench\n|netid|{}\n", net_id).as_bytes(),
-            None,
-            true,
         );
     }
 
@@ -567,12 +548,7 @@ impl Bot {
             ..Default::default()
         };
 
-        self.send_packet(
-            NetMessage::GamePacket,
-            packet.to_bytes().as_slice(),
-            None,
-            true,
-        );
+        self.send_game_packet(&packet, None, true);
     }
 
     pub fn walk(&self, x: i32, y: i32, ap: bool) {
@@ -600,12 +576,7 @@ impl Bot {
             pkt.flags.set(PacketFlag::FACING_LEFT, face_left);
         }
 
-        self.send_packet(
-            NetMessage::GamePacket,
-            pkt.to_bytes().as_slice(),
-            None,
-            false,
-        );
+        self.send_game_packet(&pkt, None, false);
         let delay = self.config.findpath_delay();
         thread::sleep(Duration::from_millis(delay as u64));
     }
@@ -629,11 +600,9 @@ impl Bot {
     }
 
     pub fn drop_item(&self, item_id: u32, amount: u32) {
-        self.send_packet(
+        self.send_text_packet(
             NetMessage::GenericText,
             format!("action|drop\n|itemID|{}\n", item_id).as_bytes(),
-            None,
-            true,
         );
         let mut drop = self.temporary_data.drop.lock().unwrap();
         let mut dialog_callback = self.temporary_data.dialog_callback.lock().unwrap();
@@ -642,15 +611,13 @@ impl Bot {
         *dialog_callback = Some(|bot| {
             let mut drop = bot.temporary_data.drop.lock().unwrap();
             let mut dialog_callback = bot.temporary_data.dialog_callback.lock().unwrap();
-            bot.send_packet(
+            bot.send_text_packet(
                 NetMessage::GenericText,
                 format!(
                     "action|dialog_return\ndialog_name|drop_item\nitemID|{}|\ncount|{}\n",
                     drop.0, drop.1
                 )
                 .as_bytes(),
-                None,
-                true,
             );
             *drop = (0, 0);
             *dialog_callback = None;
@@ -658,11 +625,9 @@ impl Bot {
     }
 
     pub fn trash_item(&self, item_id: u32, amount: u32) {
-        self.send_packet(
+        self.send_text_packet(
             NetMessage::GenericText,
             format!("action|trash\n|itemID|{}\n", item_id).as_bytes(),
-            None,
-            true,
         );
         let mut trash = self.temporary_data.trash.lock().unwrap();
         let mut dialog_callback = self.temporary_data.dialog_callback.lock().unwrap();
@@ -671,15 +636,13 @@ impl Bot {
         *dialog_callback = Some(|bot| {
             let mut trash = bot.temporary_data.trash.lock().unwrap();
             let mut dialog_callback = bot.temporary_data.dialog_callback.lock().unwrap();
-            bot.send_packet(
+            bot.send_text_packet(
                 NetMessage::GenericText,
                 format!(
                     "action|dialog_return\ndialog_name|trash_item\nitemID|{}|\ncount|{}\n",
                     trash.0, trash.1
                 )
                 .as_bytes(),
-                None,
-                true,
             );
             *trash = (0, 0);
             *dialog_callback = None;
@@ -693,22 +656,16 @@ impl Bot {
         let mut dialog_callback = self.temporary_data.dialog_callback.lock().unwrap();
         *dialog_callback = Some(|bot| {
             let net_id = bot.runtime.net_id();
-            bot.send_packet(
+            bot.send_text_packet(
                 NetMessage::GenericText,
                 format!("action|dialog_return\ndialog_name|popup\nnetID|{}|\nbuttonClicked|acceptlock\n", net_id).as_bytes(),
-                None,
-                true,
             );
 
             let mut dialog_callback = bot.temporary_data.dialog_callback.lock().unwrap();
             *dialog_callback = Some(|bot| {
-                bot.send_packet(
+                bot.send_text_packet(
                     NetMessage::GenericText,
-                    "action|dialog_return\ndialog_name|acceptaccess\n"
-                        .to_string()
-                        .as_bytes(),
-                    None,
-                    true,
+                    b"action|dialog_return\ndialog_name|acceptaccess\n",
                 );
                 let mut dialog_callback = bot.temporary_data.dialog_callback.lock().unwrap();
                 *dialog_callback = None;
@@ -821,11 +778,37 @@ impl Bot {
             }
         }
 
-        for packet in packets_to_send {
-            self.send_packet(NetMessage::GamePacket, &packet.to_bytes(), None, true);
+        for packet in &packets_to_send {
+            self.send_game_packet(packet, None, true);
         }
 
         collected_count
+    }
+
+    pub fn enter_door(&self, offset_x: i32, offset_y: i32) {
+        let position = self.movement.position();
+        let base_x = (position.0 / 32.0).floor() as i32;
+        let base_y = (position.1 / 32.0).floor() as i32;
+        let door_x = base_x + offset_x;
+        let door_y = base_y + offset_y;
+
+        let pkt = NetGamePacketData {
+            _type: NetGamePacket::TileChangeRequest,
+            vector_x: position.0,
+            vector_y: position.1,
+            int_x: door_x,
+            int_y: door_y,
+            value: 0,
+            ..Default::default()
+        };
+        self.send_game_packet(&pkt, None, true);
+    }
+
+    pub fn send_dialog_return(&self, dialog_data: &str) {
+        self.send_text_packet(
+            NetMessage::GenericText,
+            format!("action|dialog_return\n{}\n", dialog_data).as_bytes(),
+        );
     }
 }
 

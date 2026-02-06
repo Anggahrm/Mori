@@ -6,8 +6,8 @@ authors = ["Cendy"]
 
 [dependencies]
 rusty_enet = { git = "https://github.com/CLOEI/rusty_enet.git" }
-gtitem-r = { git = "https://github.com/CLOEI/gtitem-r.git" }
-gtworld-r = { git = "https://github.com/CLOEI/gtworld-r.git" }
+gtitem-r = { path = "gtitem-r" }
+gtworld-r = { path = "gtworld-r" }
 ureq = { version = "3.1.0", features = ["cookies", "json", "socks-proxy" ]}
 rand = "0.9.2"
 urlencoding = "2.1.3"
