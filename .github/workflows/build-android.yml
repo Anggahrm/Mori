@@ -82,19 +82,28 @@ jobs:
 
       - name: Build for Android (ARM64)
         env:
-          CARGO_TARGET_AARCH64_LINUX_ANDROID_LINK linker: aarch64-linux-android33-clang
           CC_aarch64_linux_android: ${{ steps.setup-ndk.outputs.ndk-path }}/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android33-clang
           CXX_aarch64_linux_android: ${{ steps.setup-ndk.outputs.ndk-path }}/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android33-clang
           AR_aarch64_linux_android: ${{ steps.setup-ndk.outputs.ndk-path }}/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-ar
-          CARGO_TARGET_AARCH64_LINUX_ANDROID_AR: ${{ steps.setup-ndk.outputs.ndk-path }}/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-ar
+          CARGO_TARGET_TARGET_AARCH64_LINUX_ANDROID_AR: ${{ steps.setup-ndk.outputs.ndk-path }}/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-ar
         run: |
           cargo build --release --target aarch64-linux-android
 
-      - name: Upload Android binary
+      - name: Prepare Android APK structure
+        run: |
+          mkdir -p android/app/src/main/jniLibs/arm64-v8a
+          cp target/aarch64-linux-android/release/Mori android/app/src/main/jniLibs/arm64-v8a/libmori.so
+
+      - name: Build Android APK (ARM64)
+        run: |
+          cd android
+          ./gradlew assembleDebug
+
+      - name: Upload Android APK
         uses: actions/upload-artifact@v4
         with:
           name: mori-android-arm64
-          path: target/aarch64-linux-android/release/Mori
+          path: android/app/build/outputs/apk/debug/app-debug.apk
           retention-days: 30
 
   build-android-armv7:
@@ -174,9 +183,19 @@ jobs:
         run: |
           cargo build --release --target armv7-linux-androideabi
 
-      - name: Upload Android binary
+      - name: Prepare Android APK structure (ARMv7)
+        run: |
+          mkdir -p android/app/src/main/jniLibs/armeabi-v7a
+          cp target/armv7-linux-androideabi/release/Mori android/app/src/main/jniLibs/armeabi-v7a/libmori.so
+
+      - name: Build Android APK (ARMv7)
+        run: |
+          cd android
+          ./gradlew assembleDebug
+
+      - name: Upload Android APK
         uses: actions/upload-artifact@v4
         with:
           name: mori-android-armv7
-          path: target/armv7-linux-androideabi/release/Mori
+          path: android/app/build/outputs/apk/debug/app-debug.apk
           retention-days: 30
