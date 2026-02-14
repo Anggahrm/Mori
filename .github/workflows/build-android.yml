@@ -9,7 +9,7 @@ on:
 
 env:
   CARGO_TERM_COLOR: always
-  NDK_VERSION: "26.1.10909125"
+  NDK_VERSION: "r26b"
 
 jobs:
   build-android:
