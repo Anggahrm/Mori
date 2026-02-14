@@ -74,7 +74,6 @@ jobs:
           [target.aarch64-linux-android]
           ar = "${{ steps.setup-ndk.outputs.ndk-path }}/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-ar"
           linker = "${{ steps.setup-ndk.outputs.ndk-path }}/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android33-clang"
-          strip = "${{ steps.setup-ndk.outputs.ndk-path }}/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-strip"
 
           [env]
           ANDROID_NDK_HOME = "${{ steps.setup-ndk.outputs.ndk-path }}"
@@ -160,7 +159,6 @@ jobs:
           [target.armv7-linux-androideabi]
           ar = "${{ steps.setup-ndk.outputs.ndk-path }}/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-ar"
           linker = "${{ steps.setup-ndk.outputs.ndk-path }}/toolchains/llvm/prebuilt/linux-x86_64/bin/armv7a-linux-androideabi33-clang"
-          strip = "${{ steps.setup-ndk.outputs.ndk-path }}/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-strip"
 
           [env]
           ANDROID_NDK_HOME = "${{ steps.setup-ndk.outputs.ndk-path }}"
