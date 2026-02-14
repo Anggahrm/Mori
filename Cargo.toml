@@ -20,9 +20,16 @@ futures-util = "0.3"
 askama = "0.14"
 askama_web = { version = "0.14", features = ["axum-0.8"] }
 egui = "0.33.0"
-eframe = "0.33.0"
+eframe = { version = "0.33.0", default-features = false, features = [
+    "default_fonts",
+    "glow",
+    "wgpu",
+] }
 egui_extras = { version = "0.33.0", features = ["svg"] }
 egui_material_icons = "0.5.0"
+
+[target.'cfg(target_os = "android")'.dependencies]
+winit = { version = "0.30", features = ["android-native-activity"] }
 
 [patch."https://github.com/cloei/gtitem-r"]
 gtitem-r = { path = "core/gtitem-r" }
